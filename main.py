@@ -125,20 +125,48 @@ def save_wake_time():
 
 # --==-- TO-DO LIST --==--
 def add_todo():
-    # Fixed: Make dialog appear on top
-    dialog = simpledialog._QueryDialog(
-        "Add Task", "New task:",
-        parent=root,
-        title="Add Task"
-    )
-    dialog.transient(root)  # Stay on top of root
-    dialog.grab_set()       # Block input to root
-    dialog.wait_window()    # Wait for user
-    result = dialog.getresult()
-    if result and result.strip():
-        data["todos"].append(result.strip())
-        save_data()
-        refresh_todos()
+    # Create a Toplevel window manually to control stacking
+    dialog = tk.Toplevel(root)
+    dialog.withdraw()  # Hide while we set it up
+
+    # Make it a dialog
+    dialog.transient(root)
+    dialog.grab_set()
+    dialog.title("Add Task")
+    dialog.config(bg="white", padx=20, pady=20)
+
+    tk.Label(dialog, text="What do you need to do?", bg="white", font=(FONT_NAME, 10)).pack(pady=5)
+    entry = tk.Entry(dialog, width=30, font=(FONT_NAME, 10))
+    entry.pack(pady=5)
+    entry.focus()
+
+    result = []
+
+    def on_ok():
+        result.append(entry.get())
+        dialog.destroy()
+        if result[0].strip():
+            data["todos"].append(result[0].strip())
+            save_data()
+            refresh_todos()
+
+    def on_cancel():
+        dialog.destroy()
+
+    button_frame = tk.Frame(dialog, bg="white")
+    button_frame.pack(pady=10)
+
+    tk.Button(button_frame, text="Cancel", command=on_cancel, bg="lightgray", width=10).pack(side="left", padx=5)
+    tk.Button(button_frame, text="Add", command=on_ok, bg=GREEN, fg="white", width=10).pack(side="left", padx=5)
+
+    # Center dialog over main window
+    dialog.update_idletasks()
+    x = root.winfo_x() + (root.winfo_width() // 2) - (dialog.winfo_width() // 2)
+    y = root.winfo_y() + (root.winfo_height() // 2) - (dialog.winfo_height() // 2)
+    dialog.geometry(f"+{x}+{y}")
+
+    dialog.deiconify()  # Show after positioning
+    dialog.wait_window()  # Wait for it to close
 
 def delete_todo(i):
     del data["todos"][i]
