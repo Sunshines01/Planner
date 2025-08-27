@@ -83,7 +83,7 @@ def generate_schedule(wake_time_str, sleep_hours=7.5):
             total_min = cwt_min + int(delay_h * 60)
             hour = (total_min // 60) % 24
             minute = total_min % 60
-            time_str = f"{hour:02d}:{minute:02d}"  # ✅ Fixed: :02d not :02f
+            time_str = f"{hour:02d}:{minute:02d}"
             schedule.append(f"{delay_h:4.1f}h | {time_str} | {activity}")
         return schedule
     except Exception:
