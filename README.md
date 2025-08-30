@@ -14,3 +14,4 @@
   - Pomodoro timer
   - Sync with Google or Outlook calendar each day
   - Autosave daily schedule
+  - Improve readability by using more .py files and OOP
