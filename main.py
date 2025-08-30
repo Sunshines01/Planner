@@ -1,347 +1,429 @@
 import tkinter as tk
-from tkinter import messagebox, simpledialog
-import datetime
+from tkinter import ttk, simpledialog, messagebox
 import json
+from datetime import datetime
+from functools import partial
 import os
 
-# --==-- CONSTANTS --==--
-GREEN = "#9bdeac"
-PINK = "#e2979c"
-RED = "#e7305b"
-YELLOW = "#f7f5dd"
-DARK_GRAY = "#222222"
-LIGHT_GRAY = "#333333"
-FONT_NAME = "Helvetica"
-DATA_FILE = "data.json"
+# === Colors & Fonts ===
+BG_COLOUR = "#BAD7E0"
+ACCENT = "#369FC2"
+HIGHLIGHT_COLOUR = "#29486E"
+RED = "#e99090"
+AMBER = "#f0c879"
+GREEN = "#8ecaaa"
+TEXT = "#4b4b4b"
+FONT_NAME = "Segoe UI"
+FONT = ("Segoe UI", 10)
+TITLE_FONT = ("Segoe UI", 12, "bold")
 
-# --==-- LOAD & SAVE DATA --==--
+tab_frames = {}
+
+# --==-- Default Data --==--
+DEFAULT_DATA = {
+    "target_date": "2025-06-15",
+    "priority": "Complete Python Assignment",
+    "priority_rag": "🔴",
+    "modules": {
+        "Home": [],
+        "CS101": [],
+        "MATH202": [],
+        "PROJECT": []
+    },
+    "timetable": {}
+}
+
+# Generate 24-hour timetable (4am → 3am)
+for h in range(24):
+    hour = (4 + h) % 24
+    DEFAULT_DATA["timetable"][f"{hour:02d}:00"] = ""
+
+# --==-- Load & Save --==--
 def load_data():
-    if os.path.exists(DATA_FILE):
-        with open(DATA_FILE, 'r') as f:
-            d = json.load(f)
-        defaults = {
-            "target_date": "2025-06-15",
-            "todos": [],
-            "wake_time": "09:00"
-        }
-        for k, v in defaults.items():
-            if k not in d:
-                d[k] = v
-        return d
-    return defaults
+    try:
+        with open("data.json", "r", encoding="utf-8") as data_file:
+             data = json.load(data_file)
+        for key, value in DEFAULT_DATA.items():
+            if key not in data:
+                data[key] = value
+        return data
+    except FileNotFoundError as exception:
+        print("Error loading ", exception)
+    return DEFAULT_DATA.copy()
 
 def save_data():
-    with open(DATA_FILE, 'w') as f:
-        json.dump(data, f, indent=4)
+    try:
+        with open("data.json", "w", encoding="utf-8") as data_file:
+            json.dump(data, data_file, indent=4, ensure_ascii=False)
+            #ensure_ascii=False allows non-ascii characters to be written in output - needs utf-8 encoding
+    except FileNotFoundError as exception:
+        print("Error saving ", exception)
 
 data = load_data()
 
+# --==-- Main Window --==--
+window = tk.Tk()
+window.title("Planner")
+window.geometry(f"{window.winfo_screenwidth()}x{window.winfo_screenheight()}")
+window.state("zoomed")
+window.config(bg=BG_COLOUR)
 
-# --==-- CENTER WINDOW ON SCREEN --==--
-def center_window(window, width, height):
-    x = (window.winfo_screenwidth() // 2) - (width // 2)
-    y = (window.winfo_screenheight() // 2) - (height // 2)
-    window.geometry(f'{width}x{height}+{x}+{y}')
+# --==-- Style --==--
+style = ttk.Style()
+style.theme_use('default')
+style.configure("TNotebook", background=BG_COLOUR, padding=10)
+style.configure("TNotebook.Tab", background=ACCENT, foreground="white", padding=(15, 8), font=(FONT_NAME, 11))
+style.map("TNotebook.Tab", background=[('selected', HIGHLIGHT_COLOUR)])
 
+# --==-- Heading --==--
+tk.Label(window, text="Planner", font=(FONT_NAME, 20, "bold"), bg=BG_COLOUR, fg=ACCENT).pack(pady=15)
 
-# --==-- DAYS UNTIL COUNTER --==--
-def days_until(target_str):
-    try:
-        target = datetime.datetime.strptime(target_str, "%Y-%m-%d")
-        today = datetime.datetime.now()
-        delta = target - today
-        return delta.days
-    except Exception:
-        return "???"
+# Frame
+heading_frame = tk.Frame(window, bg=BG_COLOUR)
+heading_frame.pack(pady=8)
 
-def update_counter():
-    days = days_until(data["target_date"])
-    header.config(text=f" {days} days until {data['target_date']}")
-
-
-# --==-- DAILY SCHEDULE GENERATOR --==--
-def generate_schedule(wake_time_str, sleep_hours=7.5):
-    try:
-        hrs, mins = map(int, wake_time_str.split(":"))
-        cwt_min = hrs * 60 + mins
-        hour_days = 24 - sleep_hours
-
-        actions = {
-            "Wake up": 0,
-            "Cold Shower + 50mg Caffeine": 1.5,
-            "Meal 1": 2,
-            "50mg Caffeine": 5,
-            "Meal 2": 8,
-            "Breakpoint -> AAR -> Snack": 12,
-            "Meal 3 -> Stretch": hour_days - 1.5,
-            "Bed time": hour_days - 0.25,
-            "Sleep": hour_days + 0.25,
-        }
-
-        schedule = []
-        for activity, delay_h in actions.items():
-            total_min = cwt_min + int(delay_h * 60)
-            hour = (total_min // 60) % 24
-            minute = total_min % 60
-            time_str = f"{hour:02d}:{minute:02d}"
-            schedule.append(f"{delay_h:4.1f}h | {time_str} | {activity}")
-        return schedule
-    except Exception:
-        return ["Invalid time format"]
-
-def update_schedule():
-    for widget in schedule_frame.winfo_children():
-        widget.destroy()
-    schedule = generate_schedule(data["wake_time"])
-    for line in schedule:
-        color = "white"
-        if "Wake" in line: color = GREEN
-        elif "Sleep" in line: color = RED
-        elif "Caffeine" in line: color = PINK
-        tk.Label(
-            schedule_frame,
-            text=line,
-            font=("Courier", 10),
-            fg=color,
-            bg=LIGHT_GRAY,
-            anchor="w"
-        ).pack(fill="x", padx=10, pady=2)
-
-
-# --==-- SAVE WAKE TIME --==--
-def save_wake_time():
-    val = wake_var.get().strip()
-    try:
-        hrs, mins = map(int, val.split(":"))
-        if 0 <= hrs < 24 and 0 <= mins < 60:
-            data["wake_time"] = val
-            save_data()
-            update_schedule()
-        else:
-            raise ValueError
-    except:
-        messagebox.showerror("Invalid Time", "Use HH:MM (e.g., 09:00)")
-
-
-# --==-- TO-DO LIST --==--
-def add_todo():
-    # Create a Toplevel window manually to control stacking
-    dialog = tk.Toplevel(root)
-    dialog.withdraw()  # Hide while we set it up
-
-    # Make it a dialog
-    dialog.transient(root)
-    dialog.grab_set()
-    dialog.title("Add Task")
-    dialog.config(bg="white", padx=20, pady=20)
-
-    tk.Label(dialog, text="What do you need to do?", bg="white", font=(FONT_NAME, 10)).pack(pady=5)
-    entry = tk.Entry(dialog, width=30, font=(FONT_NAME, 10))
-    entry.pack(pady=5)
-    entry.focus()
-
-    result = []
-
-    def on_ok():
-        result.append(entry.get())
-        dialog.destroy()
-        if result[0].strip():
-            data["todos"].append(result[0].strip())
-            save_data()
-            refresh_todos()
-
-    def on_cancel():
-        dialog.destroy()
-
-    button_frame = tk.Frame(dialog, bg="white")
-    button_frame.pack(pady=10)
-
-    tk.Button(button_frame, text="Cancel", command=on_cancel, bg="lightgray", width=10).pack(side="left", padx=5)
-    tk.Button(button_frame, text="Add", command=on_ok, bg=GREEN, fg="white", width=10).pack(side="left", padx=5)
-
-    # Center dialog over main window
-    dialog.update_idletasks()
-    x = root.winfo_x() + (root.winfo_width() // 2) - (dialog.winfo_width() // 2)
-    y = root.winfo_y() + (root.winfo_height() // 2) - (dialog.winfo_height() // 2)
-    dialog.geometry(f"+{x}+{y}")
-
-    dialog.deiconify()  # Show after positioning
-    dialog.wait_window()  # Wait for it to close
-
-def delete_todo(i):
-    del data["todos"][i]
-    save_data()
-    refresh_todos()
-
-def refresh_todos():
-    for widget in todo_frame.winfo_children():
-        widget.destroy()
-    for idx, todo in enumerate(data["todos"]):
-        row = tk.Frame(todo_frame, bg="white")
-        row.pack(fill="x", pady=2)
-        tk.Label(row, text=todo, anchor="w", bg="white", font=(FONT_NAME, 10)).pack(side="left", padx=4)
-        btn = tk.Button(row, text="✓", command=lambda i=idx: delete_todo(i), bg=GREEN, fg="white", width=2, relief="flat")
-        btn.pack(side="right", padx=4)
-
-
-# --==-- SCROLLABLE FRAME CLASS --==--
-class ScrollableFrame(tk.Frame):
-    def __init__(self, container, *args, **kwargs):
-        super().__init__(container, *args, **kwargs)
-        canvas = tk.Canvas(self, bg=DARK_GRAY, highlightthickness=0)
-        scrollbar = tk.Scrollbar(self, orient="vertical", command=canvas.yview)
-        self.scrollable_frame = tk.Frame(canvas, bg=DARK_GRAY)
-
-        self.scrollable_frame.bind(
-            "<Configure>",
-            lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
-        )
-
-        canvas_frame = canvas.create_window((0, 0), window=self.scrollable_frame, anchor="nw")
-        canvas.configure(yscrollcommand=scrollbar.set)
-
-        def _adjust_frame_width(event):
-            canvas.itemconfig(canvas_frame, width=container.winfo_width()-20)
-
-        canvas.bind("<Configure>", _adjust_frame_width)
-
-        canvas.pack(side="left", fill="both", expand=True)
-        scrollbar.pack(side="right", fill="y")
-
-        self.canvas = canvas
-
-        # Mouse wheel scrolling
-        def _on_mousewheel(event):
-            canvas.yview_scroll(int(-1*(event.delta/120)), "units")
-        canvas.bind_all("<MouseWheel>", _on_mousewheel)  # Windows
-        canvas.bind_all("<Button-4>", lambda e: canvas.yview_scroll(-1, "units"))  # Linux up
-        canvas.bind_all("<Button-5>", lambda e: canvas.yview_scroll(1, "units"))   # Linux down
-
-        # Remove scroll binding when dialog opens
-        def _on_dialog_open():
-            canvas.unbind_all("<MouseWheel>")
-            canvas.unbind_all("<Button-4>")
-            canvas.unbind_all("<Button-5>")
-        def _on_dialog_close():
-            canvas.bind_all("<MouseWheel>", _on_mousewheel)
-            canvas.bind_all("<Button-4>", lambda e: canvas.yview_scroll(-1, "units"))
-            canvas.bind_all("<Button-5>", lambda e: canvas.yview_scroll(1, "units"))
-
-        self.on_dialog_open = _on_dialog_open
-        self.on_dialog_close = _on_dialog_close
-
-
-# --==-- MAIN WINDOW SETUP --==--
-root = tk.Tk()
-root.title("Uni Organiser")
-root.config(bg=DARK_GRAY)
-root.resizable(False, False)
-center_window(root, 500, 700)
-
-# --==-- SCROLLABLE CONTAINER --==--
-container = ScrollableFrame(root)
-container.pack(fill="both", expand=True, padx=10, pady=10)
-
-content = container.scrollable_frame
-
-# Header
-header = tk.Label(
-    content,
-    text="",
-    font=(FONT_NAME, 16, "bold"),
-    fg=GREEN,
-    bg=DARK_GRAY
+# Date and time
+time_label = tk.Label(
+    heading_frame,
+    font=TITLE_FONT,
+    bg=BG_COLOUR,
+    fg=ACCENT
 )
-header.pack(pady=10)
-update_counter()
+time_label.pack()
 
-# Wake Time
-wake_frame = tk.Frame(content, bg=DARK_GRAY)
-wake_frame.pack(pady=5)
-tk.Label(wake_frame, text="Wake Time:", fg="white", bg=DARK_GRAY, font=(FONT_NAME, 10)).pack(side="left")
-wake_var = tk.StringVar(value=data["wake_time"])
-wake_entry = tk.Entry(wake_frame, textvariable=wake_var, width=8, font=(FONT_NAME, 10), justify="center", bg="white")
-wake_entry.pack(side="left", padx=5)
-tk.Button(
-    wake_frame,
-    text="Save",
-    command=save_wake_time,
-    bg=GREEN,
-    fg="white",
-    font=(FONT_NAME, 9, "bold"),
-    relief="flat",
-    padx=10,
-    pady=2
-).pack(side="left", padx=5)
+# Subheading
+subheading_label = tk.Label(
+    heading_frame,
+    text="Your Daily Command Center", # Add daily affirmation
+    font=FONT,
+    bg=BG_COLOUR,
+    fg=TEXT
+)
+subheading_label.pack()
 
-# Daily Schedule
-tk.Label(content, text="📅 Daily Routine", fg=YELLOW, bg=DARK_GRAY, font=(FONT_NAME, 12, "bold")).pack()
-schedule_frame = tk.Frame(content, bg=LIGHT_GRAY, bd=2, relief="flat")
-schedule_frame.pack(pady=5, fill="both", expand=True, padx=20)
-update_schedule()
+def update_clock():
+    now = datetime.now()
+    # UK format
+    formatted = f"{now.day} {now.strftime('%B %Y, %H:%M')}"
+    time_label.config(text=f"📅 {formatted}")
+    window.after(60000, update_clock)  # Update every minute
 
-# To-Do List
-tk.Label(content, text="To-Do List", fg="lightblue", bg=DARK_GRAY, font=(FONT_NAME, 12, "bold")).pack(pady=(10, 0))
-todo_frame = tk.Frame(content, bg="white", bd=2, relief="sunken", height=100)
-todo_frame.pack(pady=5, fill="both", expand=True, padx=20)
-todo_frame.pack_propagate(False)
-refresh_todos()
+update_clock()
 
-tk.Button(
-    content,
-    text="Add Task",
-    command=add_todo,
-    bg="lightblue",
-    fg="black",
-    font=(FONT_NAME, 10, "bold"),
-    relief="flat",
-    height=2
-).pack(pady=5, padx=20, fill="x")
+# === Notebook with + Button ===
+notebook_frame = tk.Frame(window, bg=BG_COLOUR)
+notebook_frame.pack(fill="both", expand=True, padx=20, pady=10)
 
-# --==-- POMODORO TIMER --==--
-try:
-    from pomodoro import PomodoroTimer
-    pomodoro_widget = PomodoroTimer(content)
-except Exception as e:
-    tk.Label(
-        content,
-        text="Timer failed to load",
-        fg="red",
-        bg="black",
-        font=("Helvetica", 10)
-    ).pack(pady=10)
+notebook = ttk.Notebook(notebook_frame)
+notebook.pack(side="top", fill="both", expand=True)
 
-# Change Deadline
-def change_date():
-    dialog = simpledialog._QueryDialog(
-        "Change Deadline", "Enter date (YYYY-MM-DD):",
-        parent=root,
-        title="Target Date",
-        initialvalue=data["target_date"]
-    )
-    dialog.transient(root)
-    dialog.grab_set()
-    dialog.wait_window()
-    result = dialog.getresult()
-    if result:
-        try:
-            datetime.datetime.strptime(result, "%Y-%m-%d")
-            data["target_date"] = result
+# Place + button to the right of tabs
+add_tab_button = tk.Label(notebook_frame, text="➕", font=(FONT_NAME, 14, "bold"), bg=ACCENT, fg="white", cursor="hand2", width=3)
+add_tab_button.place(relx=1.0, y=10, anchor="ne", x=-10)
+
+def add_new_module():
+    name = simpledialog.askstring("New Module", "Enter module name:")
+    if name and name.strip():
+        name = name.strip()
+        if name in data["modules"]:
+            messagebox.showwarning("Exists", f"A module named '{name}' already exists!")
+            return
+        data["modules"][name] = []
+
+        tab = tk.Frame(notebook, bg=BG_COLOUR)
+        notebook.add(tab, text=name)
+        tab_frames[name] = tab
+
+        # === Add Delete Button ===
+        button_frame = tk.Frame(tab, bg=BG_COLOUR)
+        button_frame.pack(anchor="ne", padx=20, pady=10)
+
+        delete_button = tk.Button(button_frame, text="🗑️ Delete This Module", command=make_delete_tab_func(name, tab),
+                                  bg="lightcoral", fg="white", font=(FONT_NAME, 9, "bold"), relief="flat", width=20,
+                                  height=1)
+        delete_button.pack()
+
+        create_task_list(tab, data["modules"][name])
+
+        save_data()
+        messagebox.showinfo("Success", f"Module '{name}' created!")
+
+add_tab_button.bind("<Button-1>", lambda e: add_new_module())
+
+# --==-- RAG Color Helper --==--
+def set_rag_color(label, status):
+    if status == "🔴": label.config(fg=RED)
+    elif status == "🟡": label.config(fg=AMBER)
+    elif status == "🟢": label.config(fg=GREEN)
+    else: label.config(fg="gray")
+
+# --==-- Scrollable frame - scrolls when mouse is over it --==--
+def create_scrollable_frame(mouse):
+    frame = tk.Frame(mouse, bg="white", bd=1, relief="solid")
+    frame.pack(pady=10, fill="both", expand=True, padx=25)
+
+    canvas = tk.Canvas(frame, bg="white")
+    scrollbar = tk.Scrollbar(frame, orient="vertical", command=canvas.yview)
+    scrollable_frame = tk.Frame(canvas, bg="white")
+
+    def on_frame_configure(event):
+        canvas.configure(scrollregion=canvas.bbox("all"))
+
+    scrollable_frame.bind("<Configure>", on_frame_configure)
+
+    canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
+    canvas.configure(yscrollcommand=scrollbar.set)
+
+    canvas.pack(side="left", fill="both", expand=True)
+    scrollbar.pack(side="right", fill="y")
+
+    # Scroll only when mouse is over this canvas
+    def _on_enter(event):
+        canvas.focus_set()
+
+    def _on_mousewheel(event):
+        canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
+
+    canvas.bind("<Enter>", _on_enter)
+    canvas.bind("<MouseWheel>", _on_mousewheel)  # For windows
+
+    def _on_destroy(event):
+        canvas.unbind("<MouseWheel>")
+
+    canvas.bind("<Destroy>", _on_destroy)
+
+    return scrollable_frame, canvas
+
+# --==-- Timetable Frame --==--
+def create_timetable_frame(parent):
+    scrollable_frame, canvas = create_scrollable_frame(parent)
+    entries = {}
+
+    for h in range(24):
+        hour = (4 + h) % 24
+        am_pm = "AM" if hour < 12 else "PM"
+        if hour == 0: am_pm = "AM"
+        display_hour = hour if hour <= 12 else hour - 12
+        if display_hour == 0: display_hour = 12
+        time_label = f"{display_hour:02d}:00 {am_pm}"
+
+        row = tk.Frame(scrollable_frame, bg="white")
+        row.pack(fill="x", pady=1, padx=5)
+
+        tk.Label(row, text=time_label, width=15, anchor="w", bg="white", font=("Courier", 11, "bold"), fg=ACCENT).pack(side="left")
+
+        saved = data["timetable"].get(f"{hour:02d}:00", "")
+        var = tk.StringVar(value=saved)
+        entries[f"{hour:02d}:00"] = var
+
+        entry = tk.Entry(row, textvariable=var, font=(FONT_NAME, 11), width=50)
+        entry.pack(side="left", padx=10, fill="x", expand=True)
+
+    # Update scroll region after all entries
+    scrollable_frame.update_idletasks()
+    canvas.config(scrollregion=canvas.bbox("all"))
+
+    def save_timetable():
+        for time_key, var in entries.items():
+            data["timetable"][time_key] = var.get().strip()
+        save_data()
+        messagebox.showinfo("Saved", "Timetable saved! 🌟")
+
+    tk.Button(parent, text="💾 Save All Entries", command=save_timetable, bg=ACCENT, fg="white", font=TITLE_FONT, height=2).pack(pady=15)
+    return entries
+
+# --==-- Task List --==--
+def create_task_list(parent, task_list):
+    scrollable_frame, canvas = create_scrollable_frame(parent)
+
+    def refresh_tasks():
+        for widget in scrollable_frame.winfo_children():
+            widget.destroy()
+        for idx, (task, status) in enumerate(task_list):
+            row = tk.Frame(scrollable_frame, bg="white")
+            row.pack(fill="x", pady=2, padx=10)
+
+            delete_button = tk.Button(row,text="❌",command=partial(delete_task, idx),bg="lightcoral",fg="white",
+                                      width=2,font=(FONT_NAME, 8))
+            delete_button.pack(side="left", padx=2)
+
+            tk.Label(row, text=task, bg="white", font=(FONT_NAME, 10), anchor="w").pack(side="left", padx=6, fill="x", expand=True)
+
+            rag_label = tk.Label(row, text=status, width=3, font=TITLE_FONT)
+            rag_label.pack(side="right", padx=6)
+            set_rag_color(rag_label, status)
+
+            def make_click_handler(task_idx):
+                def click_handler(event):
+                    cycle_rag(task_idx)
+
+                return click_handler
+
+            rag_label.bind("<Button-1>", make_click_handler(idx))
+
+        scrollable_frame.update_idletasks()
+        canvas.config(scrollregion=canvas.bbox("all"))
+
+    def delete_task(idx):
+        if 0 <= idx < len(task_list):
+            del task_list[idx]
             save_data()
-            update_counter()
-        except:
-            messagebox.showerror("Error", "Invalid format. Use YYYY-MM-DD")
+            refresh_tasks()
 
-tk.Button(
-    content,
-    text="Change Deadline",
-    command=change_date,
-    bg="lightyellow",
-    fg="black",
-    font=(FONT_NAME, 10),
-    relief="flat"
-).pack(pady=5)
+    def cycle_rag(task_idx):
+        if 0 <= task_idx < len(task_list):
+            task, current_status = task_list[task_idx]
+            statuses = ["🔴", "🟡", "🟢", "🔘"]
+            if current_status in statuses:
+                status_idx = statuses.index(current_status)
+                next_idx = (status_idx + 1) % 4
+                new_status = statuses[next_idx]
+            else:
+                new_status = "🔴"
+            task_list[task_idx] = (task, new_status)
+            save_data()
+            refresh_tasks()
 
-root.attributes("-topmost", True)
+    refresh_tasks()
 
-root.mainloop()
+    # --==-- ADD TASK BOX --==--
+    input_frame = tk.Frame(parent, bg=BG_COLOUR)
+    input_frame.pack(pady=8, padx=25, fill="x")
+
+    tk.Label(input_frame, text="➕ Add New Task", font=TITLE_FONT, bg=BG_COLOUR, fg=TEXT).pack(anchor="w")
+
+    entry = tk.Entry(input_frame, font=(FONT_NAME, 11), relief="solid", bd=2)
+    entry.pack(fill="x", pady=4)
+
+    def add_task(event=None):
+        text = entry.get().strip()
+        if text:
+            task_list.append((text, "🔴"))
+            entry.delete(0, "end")
+            save_data()
+            refresh_tasks()
+        else:
+            messagebox.showwarning("Empty Task", "Please enter a task!")
+
+    entry.bind("<Return>", add_task)
+
+    tk.Button(input_frame, text="➕ Add", command=add_task, bg=ACCENT, fg="white", font=(FONT_NAME, 9, "bold"), width=10
+    ).pack(pady=4)
+
+    return refresh_tasks
+
+# --==-- HOME TAB --==--
+home_tab = tk.Frame(notebook, bg=BG_COLOUR)
+notebook.add(home_tab, text="🏠 Home")
+tab_frames["Home"] = home_tab
+
+# Left (Tasks) | Right (Timetable)
+split_frame = tk.Frame(home_tab, bg=BG_COLOUR)
+split_frame.pack(fill="both", expand=True, padx=15, pady=10)
+
+left_frame = tk.Frame(split_frame, bg=BG_COLOUR, width=500)
+left_frame.pack(side="left", fill="both", expand=True)
+left_frame.pack_propagate(False)
+
+right_frame = tk.Frame(split_frame, bg=BG_COLOUR, width=500)
+right_frame.pack(side="right", fill="both", expand=True)
+right_frame.pack_propagate(False)
+
+# --==-- Priority Task --==--
+tk.Label(left_frame, text="🎯 Priority Task", font=TITLE_FONT, bg=BG_COLOUR, fg=TEXT).pack(anchor="w", padx=25, pady=(15, 8))
+
+# RAG button on same line
+priority_frame = tk.Frame(left_frame, bg=BG_COLOUR)
+priority_frame.pack(padx=25, pady=6, fill="x")
+
+priority_var = tk.StringVar(value=data.get("priority", "No priority set"))
+priority_entry = tk.Entry(priority_frame, textvariable=priority_var, font=(FONT_NAME, 11), bd=2, relief="solid")
+priority_entry.pack(side="left", fill="x", expand=True, ipady=4)
+
+# RAG Status Button
+priority_rag = data.get("priority_rag", "🔴")  # Load saved RAG
+
+
+def cycle_priority_rag(event=None):
+    global priority_rag
+    statuses = ["🔴", "🟡", "🟢", "🔘"]
+    if priority_rag in statuses:
+        current_index = statuses.index(priority_rag)
+    else:
+        current_index = 0
+    next_index = (current_index + 1) % 4
+    priority_rag = statuses[next_index]
+    rag_button.config(text=priority_rag)
+    set_rag_color(rag_button, priority_rag)
+
+rag_button = tk.Label(priority_frame, text=priority_rag, font=(FONT_NAME, 14, "bold"), width=3, cursor="hand2", bg="white")
+rag_button.pack(side="right", padx=(10, 0))
+set_rag_color(rag_button, priority_rag)
+rag_button.bind("<Button-1>", cycle_priority_rag)
+
+# --==-- To-Do List --==--
+tk.Label(left_frame, text="✅ Today's To-Do List", font=TITLE_FONT, bg=BG_COLOUR, fg=TEXT).pack(anchor="w", padx=25, pady=(10, 8))
+create_task_list(left_frame, data["modules"]["Home"])
+
+# --==-- Timetable --==--
+tk.Label(right_frame, text="📅 Today's Timetable", font=(FONT_NAME, 14, "bold"), bg=BG_COLOUR, fg=TEXT).pack(anchor="w", padx=25, pady=(10, 10))
+create_timetable_frame(right_frame)
+
+# === Load ALL Modules from data.json + Add Delete Button ===
+def make_delete_tab_func(tab_name, tab_widget):
+    def delete_tab():
+        confirm = messagebox.askyesno(
+            "Delete Module",
+            f"Are you sure you want to delete '{tab_name}'?\n\n"
+            "All tasks in this module will be permanently lost.",
+            icon="warning"
+        )
+        if not confirm:
+            return
+
+        # Remove from data
+        if tab_name in data["modules"]:
+            del data["modules"][tab_name]
+        save_data()
+
+        # Remove from UI
+        notebook.forget(tab_widget)
+        del tab_frames[tab_name]
+
+        # Optional: Show hint
+        messagebox.showinfo("Deleted", f"Module '{tab_name}' has been deleted.")
+
+    return delete_tab
+
+for name in list(data["modules"].keys()):  # Use list() to avoid modification during iteration
+    if name == "Home":
+        continue
+    if name not in tab_frames:
+        tab = tk.Frame(notebook, bg=BG_COLOUR)
+        notebook.add(tab, text=name)
+        tab_frames[name] = tab
+
+        # --==-- Add Delete Button at Top of Tab --==--
+        button_frame = tk.Frame(tab, bg=BG_COLOUR)
+        button_frame.pack(anchor="ne", padx=20, pady=10)
+
+        delete_btn = tk.Button(button_frame, text="🗑️ Delete This Module", command=make_delete_tab_func(name, tab), bg="lightcoral",
+            fg="white", font=(FONT_NAME, 9, "bold"), relief="flat", width=20, height=1)
+        delete_btn.pack()
+
+        # --==-- Task List Below --==--
+        create_task_list(tab, data["modules"][name])
+
+# --==-- Auto-Save on Close --==--
+def on_closing():
+    data["priority"] = priority_var.get().strip()
+    data["priority_rag"] = priority_rag
+    save_data()
+    window.destroy()
+
+window.protocol("WM_DELETE_WINDOW", on_closing)
+
+try:
+    window.mainloop()
+except Exception as exception:
+    messagebox.showerror("Error", f"App crashed: {exception}")
