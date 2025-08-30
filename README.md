@@ -7,7 +7,10 @@
 - Daily schedule
 - Different tabs to organise objective boards
 - Date and time
+- Autosaves everything before shutting down the programme - apart from the daily schedule
+- Red, Amber, Green tags on every task 
 
-  ## To add:
+  ## Need to add:
   - Pomodoro timer
   - Sync with Google or Outlook calendar each day
+  - Autosave daily schedule
