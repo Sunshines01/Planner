@@ -2,6 +2,8 @@
 
 ## A daily organiser - work in progress
 
+Inspired by personal need for a simple easy to use interface that organises all my tasks in one place
+
 ## Contains:
 - To-do list
 - Daily schedule
