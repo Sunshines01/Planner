@@ -1,6 +1,6 @@
 # Planner
 
-## A daily organiser - incomplete
+## A daily organiser - work in progress
 
 ## Contains:
 - To-do list
