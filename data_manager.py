@@ -12,7 +12,8 @@ DEFAULT_DATA = {
         "MATH202": [],
         "PROJECT": []
     },
-    "timetable": {}
+    "timetable": {},
+    "task_history": []
 }
 
 # Generate 24-hour timetable (4am → 3am)
