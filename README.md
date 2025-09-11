@@ -10,6 +10,7 @@ Inspired by personal need for a simple easy to use interface that organises all 
 - Different tabs to organise objective boards
 - Date and time
 - Autosaves everything before shutting down the programme
-- Red, Amber, Green tags on every task 
+- Red, Amber, Green tags on every task
+- Pomodoro timer
 
 
