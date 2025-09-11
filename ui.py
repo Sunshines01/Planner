@@ -1,13 +1,33 @@
 import tkinter as tk
 from tkinter import ttk, simpledialog, messagebox
 from functools import partial
+from datetime import datetime, timedelta
+import uuid
+import matplotlib.pyplot as plt
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from utils import *
+
+# Add task history logging helper
+def create_task_record(task_text, module_name, scheduled_time=None):
+    return {
+        "id": f"task_{int(datetime.now().timestamp())}_{uuid.uuid4().hex[:6]}",
+        "text": task_text,
+        "module": module_name,
+        "created_at": datetime.now().isoformat(),
+        "completed_at": None,
+        "scheduled_time": scheduled_time
+    }
+
+def guess_scheduled_time():
+    hour = datetime.now().hour
+    return f"{hour:02d}:00"
+
 
 class PlannerUI:
     def __init__(self, root, data_manager, on_closing):
         self.root = root
         self.data_manager = data_manager
-        self.on_closing = on_closing  # Callback when closing
+        self.on_closing = on_closing
         self.tab_frames = {}
         self.priority_rag = data_manager.data.get("priority_rag", "🔴")
         self.priority_var = tk.StringVar(value=data_manager.data.get("priority", ""))
@@ -104,19 +124,53 @@ class PlannerUI:
         )
         self.rag_button.pack(side="right", padx=(10, 0))
         set_rag_color(self.rag_button, self.priority_rag)
-        self.rag_button.bind("<Button-1>", self.cycle_priority_rag)
+        self.rag_button.bind("<Button-1>", self.handle_priority_rag_click)
 
         # To-Do List
         tk.Label(left_frame, text="✅ Today's To-Do List", font=TITLE_FONT,
                  bg=BG_COLOUR, fg=TEXT).pack(anchor="w", padx=25, pady=(10, 8))
-        self.task_list_frame = self.create_task_list(left_frame, self.data_manager.data["modules"]["Home"])
+        self.create_task_list(left_frame, self.data_manager.data["modules"]["Home"], "Home")
 
         # Timetable
         tk.Label(right_frame, text="📅 Today's Timetable", font=(FONT_NAME, 14, "bold"),
                  bg=BG_COLOUR, fg=TEXT).pack(anchor="w", padx=25, pady=(10, 10))
         self.create_timetable(right_frame)
 
-    def create_task_list(self, parent, task_list):
+        # Pomodoro Button
+        tk.Button(
+            left_frame,
+            text="⏱ Open Pomodoro Timer",
+            command=self.open_pomodoro,
+            bg="#369FC2",
+            fg="white",
+            font=("Segoe UI", 10, "bold"),
+            relief="flat",
+            height=2
+        ).pack(pady=10, padx=25, fill="x")
+
+    def handle_priority_rag_click(self, event):
+        self.cycle_priority_rag()
+
+    def cycle_priority_rag(self):
+        statuses = ["🔴", "🟡", "🟢", "🔘"]
+        if self.priority_rag in statuses:
+            idx = statuses.index(self.priority_rag)
+            new_idx = (idx + 1) % 4
+            self.priority_rag = statuses[new_idx]
+        else:
+            self.priority_rag = "🔴"
+
+        self.rag_button.config(text=self.priority_rag)
+        set_rag_color(self.rag_button, self.priority_rag)
+
+    def open_pomodoro(self):
+        try:
+            from pomodoro import PomodoroTimer
+            PomodoroTimer(self.root)
+        except Exception as exception:
+            messagebox.showerror("Error", f"Could not open Pomodoro timer:\n{str(exception)}")
+
+    def create_task_list(self, parent, task_list, tab_name):
         scrollable_frame, canvas = create_scrollable_frame(parent)
 
         def refresh():
@@ -126,7 +180,7 @@ class PlannerUI:
                 row = tk.Frame(scrollable_frame, bg="white")
                 row.pack(fill="x", pady=2, padx=10)
 
-                delete_btn = tk.Button(row, text="❌", command=partial(delete_task, idx),
+                delete_btn = tk.Button(row, text="❌", command=lambda i=idx: delete_task(i),
                                        bg="lightcoral", fg="white", width=2, font=(FONT_NAME, 8))
                 delete_btn.pack(side="left", padx=2)
 
@@ -137,8 +191,7 @@ class PlannerUI:
                 rag_label = tk.Label(row, text=status, width=3, font=TITLE_FONT)
                 rag_label.pack(side="right", padx=6)
                 set_rag_color(rag_label, status)
-
-                rag_label.bind("<Button-1>", lambda e, i=idx: cycle_rag(i))
+                rag_label.bind("<Button-1>", lambda event, i=idx: self.handle_rag_click(task_list, i, tab_name, refresh))
 
             canvas.config(scrollregion=canvas.bbox("all"))
 
@@ -148,17 +201,7 @@ class PlannerUI:
                 self.data_manager.save_data()
                 refresh()
 
-        def cycle_rag(idx):
-            if 0 <= idx < len(task_list):
-                task, current = task_list[idx]
-                statuses = ["🔴", "🟡", "🟢", "🔘"]
-                new_status = statuses[(statuses.index(current) + 1) % 4] if current in statuses else "🔴"
-                task_list[idx] = (task, new_status)
-                self.data_manager.save_data()
-                refresh()
-
-        refresh()
-
+        # Input box
         input_frame = tk.Frame(parent, bg=BG_COLOUR)
         input_frame.pack(pady=8, padx=25, fill="x")
 
@@ -170,19 +213,48 @@ class PlannerUI:
 
         def add_task():
             text = entry.get().strip()
-            if text:
-                task_list.append((text, "🔴"))
-                entry.delete(0, "end")
-                self.data_manager.save_data()
-                refresh()
-            else:
+            if not text:
                 messagebox.showwarning("Empty Task", "Please enter a task!")
+                return
 
-        entry.bind("<Return>", lambda e: add_task())
+            # Log to history
+            record = create_task_record(text, tab_name, guess_scheduled_time())
+            self.data_manager.data["task_history"].append(record)
+
+            task_list.append((text, "🔴"))
+            self.data_manager.save_data()
+            refresh()
+            entry.delete(0, "end")
+
+        entry.bind("<Return>", lambda event: add_task())
         tk.Button(input_frame, text="➕ Add", command=add_task,
                   bg=ACCENT, fg="white", font=(FONT_NAME, 9, "bold"), width=10).pack(pady=4)
 
+        refresh()  # Show tasks now
         return parent
+
+    def handle_rag_click(self, task_list, idx, tab_name, refresh_func):
+        if 0 <= idx < len(task_list):
+            task, current_status = task_list[idx]
+            statuses = ["🔴", "🟡", "🟢", "🔘"]
+            if current_status in statuses:
+                current_index = statuses.index(current_status)
+            else:
+                current_index = 0
+            new_status = statuses[(current_index + 1) % 4]
+
+            task_list[idx] = (task, new_status)
+            self.data_manager.save_data()
+
+            # If turned green, log completion time
+            if new_status == "🟢" and current_status != "🟢":
+                for rec in reversed(self.data_manager.data["task_history"]):
+                    if rec["text"] == task and rec["module"] == tab_name and rec["completed_at"] is None:
+                        rec["completed_at"] = datetime.now().isoformat()
+                        break
+                self.data_manager.save_data()
+
+            refresh_func()
 
     def create_timetable(self, parent):
         scrollable_frame, canvas = create_scrollable_frame(parent)
@@ -211,8 +283,8 @@ class PlannerUI:
                 side="left", padx=10, fill="x", expand=True)
 
         def save_timetable():
-            for k, v in entries.items():
-                self.data_manager.data["timetable"][k] = v.get().strip()
+            for key, var in entries.items():
+                self.data_manager.data["timetable"][key] = var.get().strip()
             self.data_manager.save_data()
             messagebox.showinfo("Saved", "Timetable saved! 🌟")
 
@@ -235,34 +307,30 @@ class PlannerUI:
 
         delete_btn = tk.Button(
             button_frame, text="🗑️ Delete This Module",
-            command=self.make_delete_func(name, tab),
+            command=lambda: self.delete_module(name, tab),
             bg="lightcoral", fg="white", font=(FONT_NAME, 9, "bold"),
             relief="flat", width=20, height=1
         )
         delete_btn.pack()
 
-        self.create_task_list(tab, task_list)
+        self.create_task_list(tab, task_list, name)
 
-    def make_delete_func(self, name, tab):
-        def delete():
-            if messagebox.askyesno("Delete Module", f"Delete '{name}'?\nAll tasks will be lost.", icon="warning"):
-                if name in self.data_manager.data["modules"]:
-                    del self.data_manager.data["modules"][name]
-                self.data_manager.save_data()
-                self.notebook.forget(tab)
+    def delete_module(self, name, tab):
+        if messagebox.askyesno("Delete Module", f"Delete '{name}'?\nAll tasks will be lost.", icon="warning"):
+            if name in self.data_manager.data["modules"]:
+                del self.data_manager.data["modules"][name]
+            self.data_manager.save_data()
+            self.notebook.forget(tab)
+            if name in self.tab_frames:
                 del self.tab_frames[name]
-                messagebox.showinfo("Deleted", f"'{name}' deleted.")
-        return delete
-
-    def cycle_priority_rag(self, event=None):
-        statuses = ["🔴", "🟡", "🟢", "🔘"]
-        self.priority_rag = statuses[(statuses.index(self.priority_rag) + 1) % 4] if self.priority_rag in statuses else "🔴"
-        self.rag_button.config(text=self.priority_rag)
-        set_rag_color(self.rag_button, self.priority_rag)
+            messagebox.showinfo("Deleted", f"'{name}' deleted.")
 
     def bind_events(self):
-        self.add_tab_button.bind("<Button-1>", lambda e: self.add_new_module())
+        self.add_tab_button.bind("<Button-1>", self.handle_add_module_click)
         self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
+
+    def handle_add_module_click(self, event):
+        self.add_new_module()
 
     def add_new_module(self):
         name = simpledialog.askstring("New Module", "Enter module name:")
